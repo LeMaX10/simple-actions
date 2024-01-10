@@ -1,0 +1,23 @@
+{
+    "name": "lemax10/simple-actions",
+    "description": "Реализация паттерна простых переиспользуемых действий",
+    "keywords": ["php", "laravel", "actions", "helpers"],
+    "homepage": "https://pyankov.pro",
+    "type": "project",
+    "license": "GPL-2.0-only",
+    "authors": [
+        {
+            "name": "Vladimir Pyankov (aka LeMaX10)",
+            "email": "v@pyankov.pro"
+        }
+    ],
+    "require": {
+        "php": ">=7.4.0",
+        "laravel/framework": "^6.0|^7.0|^8.0|^9.0|^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "LeMaX10\\SimpleActions\\": "src/"
+        }
+    }
+}
