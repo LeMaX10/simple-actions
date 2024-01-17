@@ -3,7 +3,7 @@
     "description": "Реализация паттерна простых переиспользуемых действий",
     "keywords": ["php", "laravel", "actions", "helpers"],
     "homepage": "https://pyankov.pro",
-    "type": "project",
+    "type": "package",
     "license": "GPL-2.0-only",
     "authors": [
         {
