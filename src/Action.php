@@ -8,6 +8,8 @@ use LeMaX10\SimpleActions\Contracts\Action as ActionContract;
 use LeMaX10\SimpleActions\Contracts\Rememberable;
 use LeMaX10\SimpleActions\Exceptions\ActionHandlerMethodNotFoundException;
 use LeMaX10\SimpleActions\Traits\AsRemembered;
+use LeMaX10\SimpleActions\Traits\Bootable;
+use LeMaX10\SimpleActions\Traits\HasEvents;
 
 /**
  * Класс Action - Абстрактный объект реализующий логику вспомогательных методов и интерферса (Действие).
@@ -16,18 +18,22 @@ use LeMaX10\SimpleActions\Traits\AsRemembered;
  */
 abstract class Action implements ActionContract, Rememberable
 {
-    use AsRemembered;
+    use AsRemembered, Bootable, HasEvents;
+
+    protected const HANDLER_METHOD = 'handle';
 
     /**
-     * Событие экшена в единую транзакцию.
      * @var bool
      */
     protected bool $singleTransaction = false;
-
     /**
-     *
+     * @var array
      */
-    protected const HANDLER_METHOD = 'handle';
+    protected array $arguments = [];
+    /**
+     * @var mixed|null
+     */
+    protected mixed $runResolved = null;
 
     /**
      * @inerhitDoc
@@ -45,6 +51,11 @@ abstract class Action implements ActionContract, Rememberable
         return app(static::class);
     }
 
+    public function __construct()
+    {
+        static::booting();
+    }
+
     /**
      * @param ...$args
      * @return mixed
@@ -56,7 +67,17 @@ abstract class Action implements ActionContract, Rememberable
             throw new ActionHandlerMethodNotFoundException(static::class);
         }
 
-        return $this->resolve(...$args);
+        $this->arguments = $args;
+
+        if ($this->fireActionEvent('beforeRun') === false) {
+            return false;
+        }
+
+        $this->runResolved = $this->resolve(...$this->arguments);
+
+        $this->fireActionEvent('afterRun');
+
+        return $this->runResolved;
     }
 
     public function runIf(bool $condition, ...$args): mixed

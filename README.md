@@ -1,7 +1,7 @@
 # Laravel Simple Actions
 
 Реализация подхода простых действий.
-Суть подхода одно действий равно одному объекту. Своего рода отсылка к laravel actions, но в более упрощенной реализации не перегруженная контекстами.
+Суть подхода одно действий равно одному объекту. Своего рода отсылка к laravel actions, но в более упрощенной реализации и не перегруженная контекстами.
 
 ## Действие (action)
 
@@ -101,6 +101,62 @@ var_dump(ExampleAction::make()->rememberForever('exampleKey')->run()); // ['1', 
 var_dump(ExampleAction::make()->tags(['exampleTag1', 'exampleTag2'])->remember('exampleKey')->run()); // ['1', '2', 3']
 ```
 
+### События действий
+Каждое действие имеет события которые возможно вызывать ДО выполнения или после ПОСЛЕ выполнения. Это позволяет подписываться на результат действий слушателями, или работать с набором входящих аргументов.
+Доступные события которые могут быть навешены на действия:
+`beforeRun` - Вызывается ДО вызова метода handle.
+`afterRun` - Вызывается после получения результата метода handle
+
+
+```php
+<?php
+declare(strict_types=1);
+namespace Example/Actions;
+
+use LeMaX10\SimpleActions\Action;
+
+/**
+ * @method ExampleModel run()
+ */
+final class ExampleAction extends Action
+{
+    protected array $items = [];
+
+    protected static boot(): void
+    {
+        static::beforeRun(function(ExampleAction $action): void {
+            if ($action->parameters['contenxt'] === 'test') {
+                $action->items[] = 'attachTestContext';
+            }
+        })
+    }
+
+    protected function handle(string $context = []): array
+    {
+        return $this->items;
+    }
+}
+
+// -- And Create external listener
+ExampleAction::beforeRun(function(ExampleAction $action): void {
+   if ($action->parameters['content'] === 'test2') {
+       $action->items[] = 'attachOtherTestContent';
+   }
+})
+
+
+// WithOut test context
+var_dump(ExampleAction::make()->run('example')); // []
+
+// With test context
+var_dump(ExampleAction::make()->run('test')); // ['attachTestContext']
+
+// With test2 context
+var_dump(ExampleAction::make()->run('test2')); // ['attachOtherTestContent']
+
+// Without all events
+var_dump(ExampleAction::withoutEvents(fn() => ExampleAction::make()->run('test2'))) // []
+```
 
 ### Описание вспомогательных методов
 `ExampleAction::make()` - Создать экземпляр объекта действия

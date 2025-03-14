@@ -19,5 +19,12 @@
         "psr-4": {
             "LeMaX10\\SimpleActions\\": "src/"
         }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LeMaX10\\SimpleActions\\SimpleActionServiceProvider"
+            ]
+        }
     }
 }
