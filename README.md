@@ -1,179 +1,684 @@
-# Laravel Simple Actions
+# Simple Actions
 
-Реализация подхода простых действий.
-Суть подхода одно действий равно одному объекту. Своего рода отсылка к laravel actions, но в более упрощенной реализации и не перегруженная контекстами.
+Пакет для реализации паттерна простых переиспользуемых действий (Actions) в Laravel приложениях.
+Вдохновлен Laravel Actions, но не перегружен контекстами. Основной упор сосредоточен на принципе 1 объект = 1 действие.
 
-## Действие (action)
+## Установка
 
-Помним, что одно действие должно быть равным одному объекту. Реализуем объект действие.
+```bash
+composer require lemax10/simple-actions
+```
 
-Пример:
+## Основные возможности
+- Простой и понятный API для создания Actions
+- **UseCase** паттерн - агрегирование Actions в сценарии
+- **DIP (SOLID)** - загрузка через Service Container, подмена реализаций
+- Полный цикл жизни событий (beforeRun, running, ran, failed, afterRun)
+- Observer паттерн подобно Eloquent
+- Управление транзакциями БД
+- Продвинутое кеширование результатов
+- Условное выполнение
+- Хелперы для удобного использования
+
+## Быстрый старт
+
+### Создание Action
+
 ```php
-<?php
-declare(strict_types=1);
-namespace Example/Actions;
-
 use LeMaX10\SimpleActions\Action;
 
-/**
- * @method ExampleModel run(int $id)
- */
-final class ExampleAction extends Action
+class CreateUserAction extends Action
 {
-    protected function handle(int $id): ExampleModel
+    protected function handle(string $name, string $email): User
     {
-        return ExampleModel::findOrFail($id);
+        return User::create([
+            'name' => $name,
+            'email' => $email,
+        ]);
+    }
+}
+```
+
+### Использование
+
+```php
+// Создание и выполнение
+$user = CreateUserAction::make()->run('John Doe', 'john@example.com');
+
+// Через хелпер
+$user = action(CreateUserAction::class, 'John Doe', 'john@example.com');
+
+// Условное выполнение
+$user = CreateUserAction::make()
+    ->runIf($condition, 'John', 'john@example.com');
+
+$user = CreateUserAction::make()
+    ->runUnless($condition, 'John', 'john@example.com');
+```
+
+### UseCase - Сценарии из Actions
+
+UseCase это полноценный Action, агрегирующий другие Actions:
+
+```php
+use LeMaX10\SimpleActions\UseCase;
+
+class RegisterUserUseCase extends UseCase
+{
+    protected function handle(array $data): User
+    {
+        // Все действия выполняются в транзакции
+        $user = CreateUserAction::make()->run($data['name'], $data['email']);
+        return tap($user, function() use($user, $data) {
+            SendWelcomeEmailAction::make()->run($user);
+            CreateUserProfileAction::make()->run($user, $data['profile']);
+        });
     }
 }
 
-var_dump(ExampleAction::make()->run(1)); // (ExampleModel)
+// Использование как обычного Action
+$user = RegisterUserUseCase::make()->run($data);
+
+// Или через хелпер
+$user = usecase(RegisterUserUseCase::class, $data);
 ```
 
-## Дейтсвие в единой транзакции
+## События
 
-Действие в единой транзакции, может быть как совокупонстью действий, так и совокупностью запросов к БД требующим соблюдения целостности и реализации в единой транзакции.
-Для реализации действий единой транзакции необходимо определить свойство объекта: `$singleTransaction` в `true` значение.
+### Цикл жизни событий
+
+Action имеет полный цикл жизни с 5 событиями:
+
+1. **beforeRun** - перед началом выполнения
+2. **running** - непосредственно перед вызовом handle()
+3. **ran** - после успешного выполнения
+4. **failed** - при ошибке выполнения
+5. **afterRun** - всегда выполняется в конце
+
+### Регистрация слушателей
 
 ```php
-<?php
-declare(strict_types=1);
-namespace Example/Actions;
+// Простая регистрация
+CreateUserAction::beforeRun(function (ActionBeforeRun $event) {
+    Log::info('Creating user', $event->arguments);
+});
 
-use LeMaX10\SimpleActions\Action;
+CreateUserAction::ran(function (ActionRan $event) {
+    Log::info('User created', ['user' => $event->result]);
+});
 
-/**
- * @method ExampleContactModel run(string $email, string $name)
- */
-final class ExampleAction extends Action
+CreateUserAction::failed(function (ActionFailed $event) {
+    Log::error('Failed to create user', [
+        'exception' => $event->exception
+    ]);
+});
+```
+
+### Остановка выполнения
+
+События `beforeRun` и `running` могут остановить выполнение, вернув `false`:
+
+```php
+CreateUserAction::beforeRun(function (ActionBeforeRun $event) {
+    if ($user->isBanned()) {
+        return false; // Остановит выполнение
+    }
+});
+```
+
+### Observer паттерн
+
+Создайте observer для группировки логики событий:
+
+```php
+use LeMaX10\SimpleActions\Observers\ActionObserver;
+
+class CreateUserActionObserver extends ActionObserver
+{
+    public function beforeRun(ActionBeforeRun $event): void
+    {
+        // Логика перед выполнением
+    }
+
+    public function ran(ActionRan $event): void
+    {
+        // Логика после успешного выполнения
+    }
+
+    public function failed(ActionFailed $event): void
+    {
+        // Логика при ошибке
+    }
+}
+
+// Регистрация observer
+CreateUserAction::observe(CreateUserActionObserver::class);
+```
+
+### Отключение событий
+
+```php
+CreateUserAction::withoutEvents(function () {
+    CreateUserAction::make()->run('John', 'john@example.com');
+});
+```
+
+## Транзакции
+
+### Автоматические транзакции
+
+```php
+class CreateUserAction extends Action
+{
+    // Всегда выполнять в транзакции
+    protected bool $singleTransaction = true;
+
+    protected function handle(string $name, string $email): User
+    {
+        return User::create(['name' => $name, 'email' => $email]);
+    }
+}
+```
+
+### Динамическое управление
+
+```php
+// Включить транзакцию
+CreateUserAction::make()
+    ->withTransaction()
+    ->run('John', 'john@example.com');
+
+// Отключить транзакцию (переопределяет $singleTransaction)
+CreateUserAction::make()
+    ->withoutTransaction()
+    ->run('John', 'john@example.com');
+```
+
+## Кеширование
+
+### Базовое кеширование
+
+```php
+// Кеширование на 60 секунд
+$result = CalculateAction::make()
+    ->remember('calc-key', 60)
+    ->run($data);
+
+// Постоянное кеширование
+$result = CalculateAction::make()
+    ->rememberForever('calc-key')
+    ->run($data);
+```
+
+### Автогенерация ключей
+
+```php
+// Ключ генерируется автоматически на основе аргументов
+$result = CalculateAction::make()
+    ->rememberAuto('prefix', 60)
+    ->run($value);
+```
+
+### Теги кеша
+
+```php
+$result = GetUserDataAction::make()
+    ->tags(['users', 'user-' . $userId])
+    ->remember('user-data-' . $userId, 60)
+    ->run($userId);
+
+// Очистка по тегам
+Cache::tags(['users'])->flush();
+```
+
+### Выбор драйвера кеша
+
+```php
+$result = HeavyCalculationAction::make()
+    ->store('redis')
+    ->remember('calculation-key', 3600)
+    ->run($data);
+```
+
+### Условное кеширование
+
+```php
+// Кешировать только если условие истинно
+$result = GetDataAction::make()
+    ->remember('data-key', 60)
+    ->cacheWhen($user->isPremium())
+    ->run();
+
+// С closure
+$result = CalculateAction::make()
+    ->remember('calc-key', 60)
+    ->cacheWhen(fn ($value) => $value > 100)
+    ->run($value);
+
+// Кешировать если НЕ выполнено условие
+$result = GetDataAction::make()
+    ->remember('data-key', 60)
+    ->cacheUnless($user->isAdmin())
+    ->run();
+```
+
+### Управление кешем
+
+```php
+$action = GetDataAction::make()->remember('key', 60);
+
+// Проверка наличия в кеше
+if ($action->isCached('key')) {
+    // ...
+}
+
+// Получение ключа кеша
+$cacheKey = $action->getCacheKey();
+
+// Удаление из кеша
+$action->forget('key');
+```
+
+## Комплексное использование
+
+Все возможности можно комбинировать:
+
+```php
+class CreateOrderAction extends Action
 {
     protected bool $singleTransaction = true;
 
-    protected function handle(string $email, string $name): ExampleContactModel
+    protected function handle(User $user, array $items): Order
     {
-        $contact = new ExampleContactModel([
-                'name' => $name
-            ]);
-
-        $contact->email()->associate($this->getEmailModel($email));
-        $contact->save();
-        return $contact;
-    }
-
-    private function getEmailModel(string $email): ExampleEmailModel
-    {
-        return ExampleEmailModel::firstOrCreate([
-                'email' =>
-            ]);
+        $order = Order::create(['user_id' => $user->id]);
+        
+        foreach ($items as $item) {
+            $order->items()->create($item);
+        }
+        
+        return $order;
     }
 }
 
-var_dump(ExampleAction::make()->run('example@domain.com', 'User Name')); // (ExampleContactModel) ['name' => 'User Name', 'email' => (ExampleEmailModel) ['email' => 'example@domain.com']]
+// Регистрация observer
+CreateOrderAction::observe(OrderActionObserver::class);
+
+// Использование с транзакцией, кешированием и событиями
+$order = CreateOrderAction::make()
+    ->withTransaction()
+    ->rememberAuto('order', 3600)
+    ->cacheWhen(fn ($user) => $user->isPremium())
+    ->tags(['orders', 'user-' . $user->id])
+    ->store('redis')
+    ->run($user, $items);
 ```
 
-## Кешируемые действия
-Каждое действие поддерживает кеширование результата. В таком случае, при повторном обращении к действию с тем же набором параметров, результатом будет выпуступать закешированные данные.
+
+## Лучшие практики
+
+### 1. Один Action - одно действие, UseCase - сценарий
 
 ```php
-<?php
-declare(strict_types=1);
-namespace Example/Actions;
+// ✅ Хорошо - атомарные действия
+class CreateUserAction extends Action { }
+class SendEmailAction extends Action { }
+class LogActivityAction extends Action { }
 
-use LeMaX10\SimpleActions\Action;
+// ✅ Хорошо - UseCase агрегирует действия
+class RegisterUserUseCase extends UseCase {
+    protected function handle($data) {
+        $user = CreateUserAction::make()->run($data);
+        SendEmailAction::make()->run($user);
+        LogActivityAction::make()->run($user);
+        return $user;
+    }
+}
 
-/**
- * @method ExampleModel run()
- */
-final class ExampleAction extends Action
+// ❌ Плохо - слишком общее
+class UserAction extends Action { }
+```
+
+### 2. Используйте абстракции для взаимозаменяемых Actions (DIP)
+
+```php
+// ✅ Хорошо - зависимость от абстрактного класса
+abstract class NotificationAction extends Action {
+    // handle() реализуют дочерние классы
+}
+
+class SendEmailAction extends NotificationAction {
+    protected function handle(User $user, string $message): bool { /* ... */ }
+}
+
+class SendSmsAction extends NotificationAction {
+    protected function handle(User $user, string $message): bool { /* ... */ }
+}
+
+class NotifyUserUseCase extends UseCase {
+    protected function handle(User $user, string $message) {
+        // Зависимость от абстракции - легко подменить через контейнер
+        return app(NotificationAction::class)->run($user, $message);
+    }
+}
+
+// ❌ Плохо - невозможность подмены в тестах
+class NotifyUserUseCase extends UseCase {
+    protected function handle(User $user, string $message) {
+        // Жестко привязан к SendEmailAction, нельзя подменить
+        return (new SendEmailAction())->run($user, $message);
+    }
+}
+```
+
+### 3. Используйте типизацию
+
+```php
+class CreateUserAction extends Action
 {
-    protected function handle(): array
-    {
-        return ExampleContactModel::get()->all();
+    protected function handle(
+        string $name,
+        string $email,
+        ?string $phone = null
+    ): User {
+        // ...
     }
 }
-
-// Simple in 10 minutes
-var_dump(ExampleAction::make()->remember('exampleKey', 10)->run()); // ['1', '2', 3']
-
-// Forever
-var_dump(ExampleAction::make()->rememberForever('exampleKey')->run()); // ['1', '2', 3']
-
-// Tags cache
-var_dump(ExampleAction::make()->tags(['exampleTag1', 'exampleTag2'])->remember('exampleKey')->run()); // ['1', '2', 3']
 ```
 
-### События действий
-Каждое действие имеет события которые возможно вызывать ДО выполнения или после ПОСЛЕ выполнения. Это позволяет подписываться на результат действий слушателями, или работать с набором входящих аргументов.
-Доступные события которые могут быть навешены на действия:
-`beforeRun` - Вызывается ДО вызова метода handle.
-`afterRun` - Вызывается после получения результата метода handle
+### 3. UseCase для агрегирования Actions
 
+UseCase - это тот же Action, но предназначенный для координации множества других Actions в единый сценарий:
 
 ```php
-<?php
-declare(strict_types=1);
-namespace Example/Actions;
+use LeMaX10\SimpleActions\UseCase;
 
-use LeMaX10\SimpleActions\Action;
-
-/**
- * @method ExampleModel run()
- */
-final class ExampleAction extends Action
+class RegisterUserUseCase extends UseCase
 {
-    protected array $items = [];
-
-    protected static boot(): void
+    // UseCase поддерживает все возможности Action:
+    // - События (beforeRun, running, ran, failed, afterRun)
+    // - Транзакции (по умолчанию включены)
+    // - Кеширование
+    
+    protected function handle(array $data): User
     {
-        static::beforeRun(function(ExampleAction $action): void {
-            if ($action->parameters['contenxt'] === 'test') {
-                $action->items[] = 'attachTestContext';
-            }
-        })
-    }
-
-    protected function handle(string $context = []): array
-    {
-        return $this->items;
+        // UseCase координирует выполнение нескольких Actions
+        $user = CreateUserAction::make()->run($data['name'], $data['email']);
+        
+        SendWelcomeEmailAction::make()->run($user);
+        
+        CreateUserProfileAction::make()->run($user, $data['profile']);
+        
+        NotifyAdminAction::make()->run($user);
+        
+        return $user;
     }
 }
 
-// -- And Create external listener
-ExampleAction::beforeRun(function(ExampleAction $action): void {
-   if ($action->parameters['content'] === 'test2') {
-       $action->items[] = 'attachOtherTestContent';
-   }
-})
+// Использование UseCase как обычного Action
+$user = RegisterUserUseCase::make()
+    ->remember('user-registration-' . $email, 300) // Можно кешировать
+    ->run($data);
 
+// UseCase поддерживает события
+RegisterUserUseCase::ran(function ($event) {
+    Log::info('User registered', ['user' => $event->result]);
+});
 
-// WithOut test context
-var_dump(ExampleAction::make()->run('example')); // []
-
-// With test context
-var_dump(ExampleAction::make()->run('test')); // ['attachTestContext']
-
-// With test2 context
-var_dump(ExampleAction::make()->run('test2')); // ['attachOtherTestContent']
-
-// Without all events
-var_dump(ExampleAction::withoutEvents(fn() => ExampleAction::make()->run('test2'))) // []
+// UseCase выполняется в транзакции (по умолчанию)
+// Если любое вложенное действие упадет - откатится всё
 ```
 
-### Описание вспомогательных методов
-`ExampleAction::make()` - Создать экземпляр объекта действия
+**Преимущества UseCase:**
+- Все Actions в UseCase выполняются в единой транзакции
+- UseCase можно кешировать целиком
+- События отслеживают весь сценарий
+- Переиспользуемая бизнес-логика
 
-`->run(...)` - Обратиться к реализации действия. Сигнатура определяется объектом действия
+## Dependency Inversion Principle (SOLID)
 
-`->remember(string $key[, Closure|\DateTimeInterface|\DateInterval|int|null $ttl])` - Результат действия должен быть закеширован и переиспользован
+Actions загружаются через Laravel Service Container (`app(static::class)`), что позволяет применять принцип инверсии зависимостей:
 
-`->rememberForever(string $key)` - Результат действия должен быть навсегда закеширован и переиспользован
+### Подход 1: Подмена через абстрактные классы
 
-`->tags(array $tags)` - Устанавливаем теги кеш данных которыми будут помечены результаты.
-
-### Модификация и расширение
-Учитывая природу подхода, расширение действий не предусматривается текущей реализаций.
-Вызов действий происходит через Laravel Container, благодаря чему вы можете в любой момент подменить реализацию того или иного действий в том числе глобально, главное сохранять сигнатуру действий.
-
-Пример переопределения:
 ```php
-app()->bind(ExampleAction::class, CustomExampleAction::class);
+// Базовый абстрактный класс (вместо интерфейса)
+abstract class SendNotificationAction extends Action {
+
+}
+
+// Реальная реализация
+class SendEmailNotificationAction extends SendNotificationAction {
+    protected function handle(User $user, string $message): bool {
+        Mail::to($user)->send(new Notification($message));
+        return true;
+    }
+}
+
+// Тестовая реализация
+class FakeSendNotificationAction extends SendNotificationAction {
+    protected function handle(User $user, string $message): bool {
+        Log::info('Fake notification sent');
+        return true;
+    }
+}
+
+// Регистрация в ServiceProvider
+public function register() {
+    $this->app->bind(
+        SendNotificationAction::class,
+        SendEmailNotificationAction::class
+    );
+}
+
+// UseCase зависит от абстракции, а не конкретного объекта
+class RegisterUserUseCase extends UseCase {
+    protected function handle(array $data): User {
+        $user = CreateUserAction::make()->run($data);
+        
+        // Получаем реализацию из контейнера
+        app(SendNotificationAction::class)->run($user, 'Welcome!');
+        
+        return $user;
+    }
+}
+
+// В тестах можно подменить
+public function test_registration() {
+    $this->app->bind(
+        SendNotificationAction::class,
+        FakeSendNotificationAction::class  // Подмена!
+    );
+    
+    $user = RegisterUserUseCase::make()->run($data);
+    
+    $this->assertDatabaseHas('users', ['email' => $data['email']]);
+}
 ```
+
+### Подход 2: Подмена конкретного класса
+
+```php
+// UseCase зависит от конкретного класса
+class RegisterUserUseCase extends UseCase {
+    protected function handle(array $data): User {
+        $user = CreateUserAction::make()->run($data);
+        
+        // Использование конкретного класса
+        SendEmailAction::make()->run($user, 'Welcome!');
+        
+        return $user;
+    }
+}
+
+// В тестах подменяем конкретный класс на fake
+public function test_registration() {
+    // Подменяем SendEmailAction на FakeEmailAction
+    $this->app->bind(SendEmailAction::class, FakeEmailAction::class);
+    
+    $user = RegisterUserUseCase::make()->run($data);
+    
+    $this->assertDatabaseHas('users', ['email' => $data['email']]);
+}
+```
+
+### Подход 3: Регистрация по строковым ключам (менее предпочтительный, но возможный способ)
+
+```php
+// В ServiceProvider
+public function register() {
+    $this->app->bind('notification.action', function ($app) {
+        if ($app->environment('testing')) {
+            return new FakeNotificationAction();
+        }
+        return new SendEmailNotificationAction();
+    });
+}
+
+// UseCase использует строковой ключ
+class RegisterUserUseCase extends UseCase {
+    protected function handle(array $data): User {
+        $user = CreateUserAction::make()->run($data);
+        
+        app('notification.action')->run($user, 'Welcome!');
+        
+        return $user;
+    }
+}
+```
+
+### Внедрение зависимостей через конструктор
+
+```php
+class SendEmailAction extends Action {
+    public function __construct(
+        protected Mailer $mailer,
+        protected LoggerInterface $logger
+    ) {
+        parent::__construct();
+    }
+    
+    protected function handle(User $user, string $message): void {
+        $this->mailer->send($user->email, $message);
+        $this->logger->info('Email sent', ['user' => $user->id]);
+    }
+}
+
+// Laravel автоматически резолвит зависимости
+$result = SendEmailAction::make()->run($user, 'Hello');
+```
+
+### Глобальная подмена для тестирования
+
+```php
+// В тестах
+class RegisterUserTest extends TestCase {
+    protected function setUp(): void {
+        parent::setUp();
+        
+        // Глобально подменяем тяжелые Actions на фейки
+        $this->app->bind(SendEmailAction::class, FakeEmailAction::class);
+        $this->app->bind(NotifySlackAction::class, FakeSlackAction::class);
+    }
+    
+    public function test_user_registration() {
+        // Все UseCase будут использовать фейковые Actions
+        $user = RegisterUserUseCase::make()->run($data);
+        
+        $this->assertTrue($user->exists);
+    }
+}
+```
+
+### Условная подмена
+
+```php
+// В ServiceProvider
+public function register() {
+    // В зависимости от окружения используем разные реализации
+    if ($this->app->environment('testing')) {
+        $this->app->bind(PaymentActionInterface::class, FakePaymentAction::class);
+    } elseif ($this->app->environment('local')) {
+        $this->app->bind(PaymentActionInterface::class, SandboxPaymentAction::class);
+    } else {
+        $this->app->bind(PaymentActionInterface::class, StripePaymentAction::class);
+    }
+}
+```
+
+### Преимущества DIP в Actions
+
+- **Тестируемость**: легко подменять реализации в тестах
+- **Гибкость**: можно менять реализацию без изменения UseCase
+- **Изоляция**: UseCase зависят от абстракций, а не конкретных классов
+- **Переиспользование**: разные реализации одной абстракции
+- **Feature Flags**: включать/выключать функциональность через контейнер
+
+### Почему не интерфейсы?
+
+⚠**Важно**: Нельзя использовать интерфейсы с конкретной сигнатурой `run()`, так как базовый контракт `Action` уже определяет `run(...$args): mixed` с variadic параметрами. Любой другой интерфейс с конкретной сигнатурой будет несовместим.
+
+**Решение**: Используйте абстрактные классы или подменяйте конкретные классы через контейнер.
+
+## Хелперы
+
+Пакет предоставляет удобные хелперы:
+
+```php
+// Быстрое выполнение Action
+$result = action(CalculateAction::class, $data);
+
+// Быстрое выполнение UseCase
+$user = usecase(RegisterUserUseCase::class, $data);
+
+// Эквивалентно:
+// $result = CalculateAction::make()->run($data);
+// $user = RegisterUserUseCase::make()->run($data);
+```
+
+Хелперы особенно удобны в контроллерах и сервисах:
+
+```php
+class UserController extends Controller
+{
+    public function register(Request $request)
+    {
+        $user = usecase(RegisterUserUseCase::class, $request->validated());
+        
+        return response()->json(['user' => $user]);
+    }
+    
+    public function sendEmail(User $user)
+    {
+        action(SendEmailAction::class, $user, 'Welcome!');
+        
+        return back()->with('success', 'Email sent');
+    }
+}
+```
+
+### 4. Кешируйте тяжелые операции
+
+```php
+class GenerateReportAction extends Action
+{
+    protected function handle(Carbon $from, Carbon $to): Report
+    {
+        // Тяжелые вычисления
+    }
+}
+
+$report = GenerateReportAction::make()
+    ->rememberAuto('reports', 3600)
+    ->tags(['reports'])
+    ->run($from, $to);
+```
+
+## Лицензия
+
+GPL-2.0-only
+
+## Автор
+
+Vladimir Pyankov (aka LeMaX10)
+- Email: v@pyankov.pro
+- Website: https://pyankov.pro

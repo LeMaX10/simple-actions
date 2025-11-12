@@ -16,35 +16,56 @@ use Illuminate\Support\Facades\Cache;
 trait AsRemembered
 {
     /**
-     * Ключ кеш данных
+     * @var string|null
      */
     private ?string $rememberKey = null;
 
     /**
-     * Время кеширования
+     * @var \Closure|\DateTimeInterface|\DateInterval|int|null
      */
     private \Closure|\DateTimeInterface|\DateInterval|int|null $rememberTtl = null;
 
     /**
-     * Тип кеш данных
+     * @var string|null
      */
-    private string|null $rememberType = null;
-
-    private array|null $cacheTags = null;
+    private ?string $rememberType = null;
 
     /**
-     * Тип метода временного кеширования
+     * @var array|null
      */
-    private $rememberTypeMethod = 'remember';
+    private ?array $cacheTags = null;
 
     /**
-     * Тип метода постоянного кеширования
+     * @var string|null
      */
-    private $rememberForeverTypeMethod = 'rememberForever';
+    private ?string $cacheStore = null;
 
     /**
-     * Установка ключа кеша
-     *
+     * @var \Closure|bool|null
+     */
+    private \Closure|bool|null $cacheWhen = null;
+
+    /**
+     * @var bool
+     */
+    private bool $autoGenerateKey = false;
+
+    /**
+     * @var string|null
+     */
+    private ?string $cacheKeyPrefix = null;
+
+    /**
+     * @var string
+     */
+    private string $rememberTypeMethod = 'remember';
+
+    /**
+     * @var string
+     */
+    private string $rememberForeverTypeMethod = 'rememberForever';
+
+    /**
      * @return $this
      */
     protected function setRememberKey(string $key): static
@@ -55,8 +76,6 @@ trait AsRemembered
     }
 
     /**
-     * Установка времени кеширования
-     *
      * @return $this
      */
     protected function setRememberTtl(\Closure|\DateTimeInterface|\DateInterval|int|null $ttl): static
@@ -67,8 +86,6 @@ trait AsRemembered
     }
 
     /**
-     * Установка типа кеширования
-     *
      * @return $this
      */
     protected function setRememberType(string $type): static
@@ -78,6 +95,10 @@ trait AsRemembered
         return $this;
     }
 
+    /**
+     * @param  string|array|null  $tags
+     * @return $this
+     */
     protected function setCacheTags(string|array|null $tags): static
     {
         $this->cacheTags = $tags === null ? null : (array) $tags;
@@ -85,6 +106,54 @@ trait AsRemembered
         return $this;
     }
 
+    /**
+     * @param  string  $store
+     * @return $this
+     */
+    protected function setCacheStore(string $store): static
+    {
+        $this->cacheStore = $store;
+
+        return $this;
+    }
+
+    /**
+     * @param  \Closure|bool  $condition
+     * @return $this
+     */
+    protected function setCacheWhen(\Closure|bool $condition): static
+    {
+        $this->cacheWhen = $condition;
+
+        return $this;
+    }
+
+    /**
+     * @param  bool  $auto
+     * @return $this
+     */
+    protected function setAutoGenerateKey(bool $auto): static
+    {
+        $this->autoGenerateKey = $auto;
+
+        return $this;
+    }
+
+    /**
+     * @param  string  $prefix
+     * @return $this
+     */
+    protected function setCacheKeyPrefix(string $prefix): static
+    {
+        $this->cacheKeyPrefix = $prefix;
+
+        return $this;
+    }
+
+    /**
+     * @param  string|array  $tags
+     * @return static
+     */
     public function tags(string|array $tags): static
     {
         return (clone $this)
@@ -92,8 +161,57 @@ trait AsRemembered
     }
 
     /**
-     * Метод для внедрения в объект настроек временного кеширование данных
-     *
+     * @param  string  $store
+     * @return static
+     */
+    public function store(string $store): static
+    {
+        return (clone $this)
+            ->setCacheStore($store);
+    }
+
+    /**
+     * @param  \Closure|bool  $condition
+     * @return static
+     */
+    public function cacheWhen(\Closure|bool $condition): static
+    {
+        return (clone $this)
+            ->setCacheWhen($condition);
+    }
+
+    /**
+     * @param  \Closure|bool  $condition
+     * @return static
+     */
+    public function cacheUnless(\Closure|bool $condition): static
+    {
+        return (clone $this)->setCacheWhen(
+            is_callable($condition) ? fn (...$args) => !$condition(...$args) : !$condition
+        );
+    }
+
+    /**
+     * @param  string|null  $prefix
+     * @return static
+     */
+    public function rememberAuto(?string $prefix = null, \Closure|\DateTimeInterface|\DateInterval|int|null $ttl = null): static
+    {
+        $clone = clone $this;
+        $clone->autoGenerateKey = true;
+        $clone->cacheKeyPrefix = $prefix ?? static::class;
+
+        if ($ttl !== null) {
+            $clone->setRememberTtl($ttl);
+            $clone->setRememberType($this->rememberTypeMethod);
+        } else {
+            $clone->setRememberType($this->rememberForeverTypeMethod);
+        }
+
+        return $clone;
+    }
+
+    /**
      * @return $this
      */
     public function remember(string $key, \Closure|\DateTimeInterface|\DateInterval|int|null $ttl): static
@@ -105,8 +223,6 @@ trait AsRemembered
     }
 
     /**
-     * Метод для внедрения в объект настроек постоянного кеширование данных
-     *
      * @return $this
      */
     public function rememberForever(string $key): static
@@ -117,23 +233,114 @@ trait AsRemembered
     }
 
     /**
-     * Прокси метод для возврата данных в зависимости от настроек
+     * @param  string|null  $key
+     * @return bool
+     */
+    public function forget(?string $key = null): bool
+    {
+        $cacheKey = $key ?? $this->rememberKey;
+
+        if ($cacheKey === null) {
+            return false;
+        }
+
+        return $this->getCacheManager()->forget($cacheKey);
+    }
+
+    /**
+     * @param  \Closure  $closure
+     * @param  array  $args
+     * @return mixed
      */
     protected function return(\Closure $closure, array $args = []): mixed
     {
+        if ($this->cacheWhen !== null) {
+            $shouldCache = is_callable($this->cacheWhen)
+                ? call_user_func($this->cacheWhen, ...$args)
+                : $this->cacheWhen;
+
+            if (!$shouldCache) {
+                return $closure();
+            }
+        }
+
         if ($this->rememberType === null) {
             return $closure();
         }
 
+        if ($this->autoGenerateKey && $this->rememberKey === null) {
+            $this->rememberKey = $this->generateCacheKey($args);
+        }
+
         return match ($this->rememberType) {
-            $this->rememberTypeMethod => $this->getCacheManager()->remember($this->rememberKey, $this->rememberTtl, $closure),
-            $this->rememberForeverTypeMethod => $this->getCacheManager()->rememberForever($this->rememberKey, $closure),
+            $this->rememberTypeMethod => $this->getCacheManager()->remember(
+                $this->rememberKey,
+                $this->rememberTtl,
+                $closure
+            ),
+            $this->rememberForeverTypeMethod => $this->getCacheManager()->rememberForever(
+                $this->rememberKey,
+                $closure
+            ),
             default => throw new \Exception('Cache type not support'),
         };
     }
 
+    /**
+     * @param  array  $args
+     * @return string
+     */
+    protected function generateCacheKey(array $args): string
+    {
+        $prefix = $this->cacheKeyPrefix ?? static::class;
+        $hash = md5(serialize($args));
+
+        return "{$prefix}:{$hash}";
+    }
+
+    /**
+     * @return Repository
+     * @phpstan-ignore-next-line
+     */
     protected function getCacheManager(): Repository
     {
-        return !empty($this->cacheTags) ? Cache::tags($this->cacheTags) : Cache::driver();
+        /** @var \Illuminate\Cache\Repository $cache */
+        $cache = $this->cacheStore !== null
+            ? Cache::store($this->cacheStore)
+            : Cache::driver();
+
+        if (!empty($this->cacheTags)) {
+            try {
+                /** @phpstan-ignore-next-line */
+                $cache = $cache->tags($this->cacheTags);
+            } catch (\BadMethodCallException $e) {
+                // Драйвер не поддерживает теги - игнорируем
+            }
+        }
+
+        return $cache;
+    }
+
+    /**
+     * @return string|null
+     */
+    public function getCacheKey(): ?string
+    {
+        return $this->rememberKey;
+    }
+
+    /**
+     * @param  string|null  $key
+     * @return bool
+     */
+    public function isCached(?string $key = null): bool
+    {
+        $cacheKey = $key ?? $this->rememberKey;
+
+        if ($cacheKey === null) {
+            return false;
+        }
+
+        return $this->getCacheManager()->has($cacheKey);
     }
 }

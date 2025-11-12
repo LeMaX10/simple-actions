@@ -26,10 +26,17 @@ abstract class Action implements ActionContract, Rememberable
      * @var bool
      */
     protected bool $singleTransaction = false;
+
+    /**
+     * @var bool
+     */
+    protected bool $withoutTransaction = false;
+
     /**
      * @var array
      */
     protected array $arguments = [];
+
     /**
      * @var mixed|null
      */
@@ -68,14 +75,30 @@ abstract class Action implements ActionContract, Rememberable
         }
 
         $this->arguments = $args;
+        $exception = null;
 
-        if ($this->fireActionEvent('beforeRun') === false) {
-            return false;
+        try {
+            if ($this->fireActionEvent('beforeRun', [$this->arguments]) === false) {
+                return false;
+            }
+
+            if ($this->fireActionEvent('running', [$this->arguments]) === false) {
+                return false;
+            }
+
+            $this->runResolved = $this->resolve(...$this->arguments);
+
+            $this->fireActionEvent('ran', [$this->arguments, $this->runResolved], false);
+
+        } catch (\Throwable $e) {
+            $exception = $e;
+
+            $this->fireActionEvent('failed', [$this->arguments, $e], false);
+
+            throw $e;
+        } finally {
+            $this->fireActionEvent('afterRun', [$this->arguments, $this->runResolved ?? null, $exception], false);
         }
-
-        $this->runResolved = $this->resolve(...$this->arguments);
-
-        $this->fireActionEvent('afterRun');
 
         return $this->runResolved;
     }
@@ -91,19 +114,52 @@ abstract class Action implements ActionContract, Rememberable
     }
 
     /**
+     * @return static
+     */
+    public function withTransaction(): static
+    {
+        $clone = clone $this;
+        $clone->singleTransaction = true;
+        $clone->withoutTransaction = false;
+
+        return $clone;
+    }
+
+    /**
+     * @return static
+     */
+    public function withoutTransaction(): static
+    {
+        $clone = clone $this;
+        $clone->withoutTransaction = true;
+        $clone->singleTransaction = false;
+
+        return $clone;
+    }
+
+    /**
      * @param ...$args
      * @return mixed
      * @throws \Exception
      */
     protected function resolve(...$args): mixed
     {
+        if ($this->withoutTransaction === true) {
+            return $this->return($this->getResolver(...$args));
+        }
+
+        // Если включена транзакция
         if ($this->singleTransaction === true) {
-            return DB::transaction($this->getResolver(...$args));
+            return DB::transaction(fn () => $this->return($this->getResolver(...$args)));
         }
 
         return $this->return($this->getResolver(...$args));
     }
 
+    /**
+     * @param ...$args
+     * @return \Closure
+     */
     protected function getResolver(...$args): \Closure
     {
         return fn () => call_user_func([$this, static::HANDLER_METHOD], ...$args);
