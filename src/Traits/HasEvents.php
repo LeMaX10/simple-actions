@@ -13,6 +13,13 @@ use LeMaX10\SimpleActions\Events\ActionRan;
 use LeMaX10\SimpleActions\Events\ActionRunning;
 use LeMaX10\SimpleActions\Observers\ActionObserver;
 
+/**
+ * Трейт HasEvents - События жизненного цикла для Actions
+ *
+ * Реализует логику жизненого цикла и контроль обработчиков событий жизненного цикла
+ *
+ * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
+ */
 trait HasEvents
 {
     protected array $dispatchesEvents = [];

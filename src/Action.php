@@ -10,6 +10,7 @@ use LeMaX10\SimpleActions\Exceptions\ActionHandlerMethodNotFoundException;
 use LeMaX10\SimpleActions\Traits\AsRemembered;
 use LeMaX10\SimpleActions\Traits\Bootable;
 use LeMaX10\SimpleActions\Traits\HasEvents;
+use LeMaX10\SimpleActions\Traits\Memorizeable;
 
 /**
  * Класс Action - Абстрактный объект реализующий логику вспомогательных методов и интерферса (Действие).
@@ -18,7 +19,7 @@ use LeMaX10\SimpleActions\Traits\HasEvents;
  */
 abstract class Action implements ActionContract, Rememberable
 {
-    use AsRemembered, Bootable, HasEvents;
+    use AsRemembered, Bootable, HasEvents, Memorizeable;
 
     protected const HANDLER_METHOD = 'handle';
 
@@ -75,8 +76,12 @@ abstract class Action implements ActionContract, Rememberable
         }
 
         $this->arguments = $args;
-        $exception = null;
 
+        if ($this->shouldSkipEvents($this->arguments)) {
+            return $this->resolve(...$this->arguments);
+        }
+
+        $exception = null;
         try {
             if ($this->fireActionEvent('beforeRun', [$this->arguments]) === false) {
                 return false;
@@ -144,16 +149,18 @@ abstract class Action implements ActionContract, Rememberable
      */
     protected function resolve(...$args): mixed
     {
-        if ($this->withoutTransaction === true) {
+        return $this->memoize(function () use ($args) {
+            if ($this->withoutTransaction === true) {
+                return $this->return($this->getResolver(...$args));
+            }
+
+            // Если включена транзакция
+            if ($this->singleTransaction === true) {
+                return DB::transaction(fn () => $this->return($this->getResolver(...$args)));
+            }
+
             return $this->return($this->getResolver(...$args));
-        }
-
-        // Если включена транзакция
-        if ($this->singleTransaction === true) {
-            return DB::transaction(fn () => $this->return($this->getResolver(...$args)));
-        }
-
-        return $this->return($this->getResolver(...$args));
+        }, $args);
     }
 
     /**

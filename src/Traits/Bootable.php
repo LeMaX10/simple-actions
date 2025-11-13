@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 namespace LeMaX10\SimpleActions\Traits;
 
+/**
+ * Трейт Bootable -
+ * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
+ */
 trait Bootable
 {
     protected static array $booted = [];
