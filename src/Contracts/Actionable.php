@@ -6,12 +6,12 @@ namespace LeMaX10\SimpleActions\Contracts;
 /**
  * Интерфейс для реализации Action - Действие.
  *
- * Этот объекты реализующие логику конкретного действия, используются для выделения логики работы с данными
+ * Это объекты реализующие логику конкретного действия, используются для выделения логики работы с данными
  * Один действие = Один объект действия
  *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
-interface Action
+interface Actionable
 {
     /**
      * @return static

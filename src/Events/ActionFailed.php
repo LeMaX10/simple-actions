@@ -17,7 +17,7 @@ class ActionFailed extends ActionEvent
     public \Throwable $exception;
 
     /**
-     * @param  \LeMaX10\SimpleActions\Contracts\Action  $action
+     * @param  \LeMaX10\SimpleActions\Contracts\Actionable  $action
      * @param  array  $arguments
      * @param  \Throwable  $exception
      */

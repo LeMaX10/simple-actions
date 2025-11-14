@@ -22,7 +22,7 @@ class ActionAfterRun extends ActionEvent
     public ?\Throwable $exception;
 
     /**
-     * @param  \LeMaX10\SimpleActions\Contracts\Action  $action
+     * @param  \LeMaX10\SimpleActions\Contracts\Actionable  $action
      * @param  array  $arguments
      * @param  mixed  $result
      * @param  \Throwable|null  $exception

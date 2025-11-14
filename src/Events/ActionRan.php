@@ -17,7 +17,7 @@ class ActionRan extends ActionEvent
     public mixed $result;
 
     /**
-     * @param  \LeMaX10\SimpleActions\Contracts\Action  $action
+     * @param  \LeMaX10\SimpleActions\Contracts\Actionable  $action
      * @param  array  $arguments
      * @param  mixed  $result
      */

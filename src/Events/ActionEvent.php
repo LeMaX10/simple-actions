@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace LeMaX10\SimpleActions\Events;
 
-use LeMaX10\SimpleActions\Contracts\Action;
+use LeMaX10\SimpleActions\Contracts\Actionable;
 
 /**
  * Абстрактный класс события действия
@@ -14,23 +14,12 @@ use LeMaX10\SimpleActions\Contracts\Action;
 abstract class ActionEvent
 {
     /**
-     * @var Action
-     */
-    public Action $action;
-
-    /**
-     * @var array
-     */
-    public array $arguments;
-
-    /**
-     * @param  Action  $action
+     * @param  Actionable  $action
      * @param  array  $arguments
      */
-    public function __construct(Action $action, array $arguments = [])
-    {
-        $this->action = $action;
-        $this->arguments = $arguments;
-    }
+    public function __construct(
+        public Actionable $action,
+        public array $arguments = []
+    ) {}
 }
 
