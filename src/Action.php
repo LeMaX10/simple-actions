@@ -5,22 +5,23 @@ namespace LeMaX10\SimpleActions;
 
 use Illuminate\Support\Facades\DB;
 use LeMaX10\SimpleActions\Contracts\Actionable;
-use LeMaX10\SimpleActions\Contracts\Memorizeable;
 use LeMaX10\SimpleActions\Contracts\Rememberable;
+use LeMaX10\SimpleActions\Contracts\Memorizeable;
 use LeMaX10\SimpleActions\Exceptions\ActionHandlerMethodNotFoundException;
-use LeMaX10\SimpleActions\Traits\Remember;
 use LeMaX10\SimpleActions\Traits\BootAction;
-use LeMaX10\SimpleActions\Traits\Memorize;
 use LeMaX10\SimpleActions\Traits\EventAction;
+use LeMaX10\SimpleActions\Traits\Memorize;
+use LeMaX10\SimpleActions\Traits\Remember;
+use LeMaX10\SimpleActions\Traits\StaticHelpers;
 
 /**
  * Класс Action - Абстрактный объект реализующий логику вспомогательных методов и интерферса (Действие).
  *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
-abstract class Action implements Actionable, Memorizeable, Rememberable
+abstract class Action implements Actionable, Rememberable, Memorizeable
 {
-    use Remember, BootAction, EventAction, Memorize;
+    use Remember, BootAction, EventAction, Memorize, StaticHelpers;
 
     protected const HANDLER_METHOD = 'handle';
 
@@ -48,22 +49,6 @@ abstract class Action implements Actionable, Memorizeable, Rememberable
      * @var mixed|null
      */
     protected mixed $runResolved = null;
-
-    /**
-     * @inheritDoc
-     */
-    public static function getName(): string
-    {
-        return class_basename(static::class);
-    }
-
-    /**
-     * @return static
-     */
-    public static function make(): static
-    {
-        return app(static::class);
-    }
 
     public function __construct()
     {
@@ -160,16 +145,18 @@ abstract class Action implements Actionable, Memorizeable, Rememberable
     protected function resolve(...$args): mixed
     {
         return $this->memoize(function () use ($args) {
+            $resolver = $this->getResolver(...$args);
+    
             if ($this->withoutTransaction === true) {
-                return $this->return($this->getResolver(...$args));
+                return $this->return($resolver);
             }
 
             // Если включена транзакция
             if ($this->singleTransaction === true) {
-                return DB::transaction(fn () => $this->return($this->getResolver(...$args)));
+                return DB::transaction($resolver);
             }
 
-            return $this->return($this->getResolver(...$args));
+            return $this->return($resolver);
         }, $args);
     }
 

@@ -44,9 +44,7 @@ if (!function_exists('action_with')) {
     function action_with(string $actionClass, \Closure $configure, ...$args): mixed
     {
         $action = $actionClass::make();
-        $action = $configure($action);
-
-        return $action->run(...$args);
+        return $configure($action)->run(...$args);
     }
 }
 
