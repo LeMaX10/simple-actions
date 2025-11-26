@@ -151,15 +151,15 @@ abstract class Action implements ActionContract, Rememberable
     {
         return $this->memoize(function () use ($args) {
             if ($this->withoutTransaction === true) {
-                return $this->return($this->getResolver(...$args));
+                return $this->return($this->getResolver(...$args), args: $args);
             }
 
             // Если включена транзакция
             if ($this->singleTransaction === true) {
-                return DB::transaction(fn () => $this->return($this->getResolver(...$args)));
+                return DB::transaction(fn () => $this->return($this->getResolver(...$args), args: $args));
             }
 
-            return $this->return($this->getResolver(...$args));
+            return $this->return($this->getResolver(...$args), args: $args);
         }, $args);
     }
 
