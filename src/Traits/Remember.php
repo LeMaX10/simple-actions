@@ -7,13 +7,13 @@ use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Трейт AsRemembered - Вспомогательный трейт. Добавляет возможность кешировать результат объекта.
+ * Трейт Remember - Вспомогательный трейт. Добавляет возможность кешировать результат объекта.
  *
- * Трейт помогает сделает кешируемые результаты объектов. В том числе может быть использован для объектов Действий.
+ * Трейт помогает сделать кешируемые результаты объектов. В том числе может быть использован для объектов Действий.
  *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
-trait AsRemembered
+trait Remember
 {
     /**
      * @var string|null
@@ -254,6 +254,10 @@ trait AsRemembered
      */
     protected function return(\Closure $closure, array $args = []): mixed
     {
+        if ($this->rememberType === null) {
+            return $closure();
+        }
+        
         if ($this->cacheWhen !== null) {
             $shouldCache = is_callable($this->cacheWhen)
                 ? call_user_func($this->cacheWhen, ...$args)
@@ -262,10 +266,6 @@ trait AsRemembered
             if (!$shouldCache) {
                 return $closure();
             }
-        }
-
-        if ($this->rememberType === null) {
-            return $closure();
         }
 
         if ($this->autoGenerateKey && $this->rememberKey === null) {
@@ -293,7 +293,7 @@ trait AsRemembered
     protected function generateCacheKey(array $args): string
     {
         $prefix = $this->cacheKeyPrefix ?? static::class;
-        $hash = md5(serialize($args));
+        $hash = generate_args_hash($args);
 
         return "{$prefix}:{$hash}";
     }

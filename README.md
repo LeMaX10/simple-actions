@@ -19,7 +19,7 @@ composer require lemax10/simple-actions
 - Полный цикл жизни событий (beforeRun, running, ran, failed, afterRun)
 - Observer паттерн подобно Eloquent
 - Управление транзакциями БД
-- Продвинутое кеширование результатов (Поддержка штатног Laravel Cache драйвера или любого поддерживаемого им)
+- Продвинутое кеширование результатов (поддержка штатного Laravel Cache драйвера или любого поддерживаемого им)
 - **Мемоизация** - кеширование в памяти на время запроса
 - Условное выполнение
 - Хелперы для удобного использования
@@ -878,17 +878,115 @@ public function register() {
 
 Пакет предоставляет удобные хелперы:
 
+### `action()` - Быстрое выполнение Action
+
 ```php
 // Быстрое выполнение Action
 $result = action(CalculateAction::class, $data);
 
+// Эквивалентно:
+$result = CalculateAction::make()->run($data);
+```
+
+### `usecase()` - Быстрое выполнение UseCase
+
+```php
 // Быстрое выполнение UseCase
 $user = usecase(RegisterUserUseCase::class, $data);
 
 // Эквивалентно:
-// $result = CalculateAction::make()->run($data);
-// $user = RegisterUserUseCase::make()->run($data);
+$user = RegisterUserUseCase::make()->run($data);
 ```
+
+### `action_with()` - Action с конфигурацией
+
+Позволяет сконфигурировать Action перед выполнением через callback:
+
+```php
+// С мемоизацией
+$user = action_with(
+    GetUserAction::class,
+    fn(Action $action) => $action->memo(),
+    $userId
+);
+
+// С кешированием
+$report = action_with(
+    GenerateReportAction::class,
+    fn(Action $action) => $action->rememberAuto('reports', 3600),
+    $from, $to
+);
+
+// Комбинация опций
+$result = action_with(
+    ProcessOrderAction::class,
+    fn(Action $action) => $action->memo()->withTransaction(),
+    $orderId, $items
+);
+
+// С тегами кеша
+$data = action_with(
+    GetUserDataAction::class,
+    fn(Action $action) => $action->remember('user-'.$id, 3600)->tags(['users']),
+    $userId
+);
+```
+
+### `usecase_with()` - UseCase с конфигурацией
+
+Позволяет сконфигурировать UseCase перед выполнением через callback:
+
+```php
+// С мемоизацией
+$user = usecase_with(
+    RegisterUserUseCase::class,
+    fn(UseCase $usecase) => $usecase->memo(),
+    $userId
+);
+
+// С кешированием
+$report = usecase_with(
+    GenerateFinanceReportUseCase::class,
+    fn(UseCase $usecase) => $usecase->rememberAuto('reports', 3600),
+    $from, $to
+);
+
+// Комбинация опций
+$result = usecase_with(
+    GenerateFinanceReportUseCase::class,
+    fn(UseCase $usecase) => $usecase->memo()->withTransaction(),
+    $orderId, $items
+);
+
+// С тегами кеша
+$data = usecase_with(
+    GenerateFinanceReportFromUserUseCase::class,
+    fn(UseCase $usecase) => $usecase->remember('user-'.$userModel->getKey(), 3600)->tags(['reports']),
+    $userModel
+);
+```
+
+### `generate_args_hash()` - Генерация хеша аргументов
+
+Функция для генерации MD5 хеша из массива аргументов. Используется внутри пакета для мемоизации и кеширования, но доступна и для внешнего использования:
+
+```php
+// Генерирует хеш из аргументов
+$hash = generate_args_hash([$userId, $type, ['option' => 'value']]);
+// Результат: "5d41402abc4b2a76b9719d911017c592"
+
+// Использование для создания уникальных ключей
+$cacheKey = "custom-key:" . generate_args_hash($params);
+Cache::remember($cacheKey, 3600, fn() => heavyCalculation($params));
+```
+
+**Почему она появилась?:**
+- Использует `json_encode` для производительности (обычно быстрее чем `serialize`)
+- Автоматический fallback на `serialize` для сложных объектов (Closure, Resources)
+- Возвращает MD5 хеш для компактности ключей
+- Чтобы не дублировать в нескольких местах (Кеширование, мемоизация) вынесена в отдельный хелпер
+
+### Использование в контроллерах
 
 Хелперы особенно удобны в контроллерах и сервисах:
 
@@ -900,6 +998,18 @@ class UserController extends Controller
         $user = usecase(RegisterUserUseCase::class, $request->validated());
         
         return response()->json(['user' => $user]);
+    }
+    
+    public function show(int $userId) // Вызываем через инъекцию
+    {
+        // С мемоизацией для избежания повторных запросов (Грубый пример для демонтрации)
+        $user = action_with(
+            GetUserAction::class,
+            static fn(Action $action) => $action->memo()  
+            $userId
+        );
+        
+        return view('user.show', compact('user'));
     }
     
     public function sendEmail(User $user)

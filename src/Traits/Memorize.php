@@ -4,14 +4,14 @@ declare(strict_types=1);
 namespace LeMaX10\SimpleActions\Traits;
 
 /**
- * Трейт Memorizeable - мемоизация результатов выполнения в памяти.
+ * Трейт Memorize - мемоизация результатов выполнения в памяти.
  *
  * Позволяет сохранять результаты выполнения Action в памяти на время запроса,
  * избегая повторного выполнения handle() для одинаковых аргументов.
  *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
-trait Memorizeable
+trait Memorize
 {
     /**
      * @var array<string, array<string, mixed>>
@@ -44,6 +44,8 @@ trait Memorizeable
     protected bool $wasFromMemo = false;
 
     /**
+     * Включить мемоизацию для данного Action
+     *
      * @param  bool  $force
      * @param  string|null  $key
      * @param  bool  $forceEvents
@@ -95,7 +97,7 @@ trait Memorizeable
             return $this->memoKey;
         }
 
-        return md5(serialize($args));
+        return generate_args_hash($args);
     }
 
     /**
