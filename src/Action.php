@@ -148,15 +148,15 @@ abstract class Action implements Actionable, Rememberable, Memorizeable
             $resolver = $this->getResolver(...$args);
     
             if ($this->withoutTransaction === true) {
-                return $this->return($resolver);
+                return $this->return($this->getResolver(...$args), args: $args);
             }
 
             // Если включена транзакция
             if ($this->singleTransaction === true) {
-                return DB::transaction($resolver);
+                return DB::transaction(fn () => $this->return($this->getResolver(...$args), args: $args));
             }
 
-            return $this->return($resolver);
+            return $this->return($this->getResolver(...$args), args: $args);
         }, $args);
     }
 
