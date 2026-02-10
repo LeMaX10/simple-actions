@@ -167,6 +167,42 @@ CreateUserAction::withoutEvents(function () {
 });
 ```
 
+### Локальные события для конкретного экземпляра
+
+Если нужно одноразово повесить хук/хуки только на один вызов:
+
+```php
+CreateUserAction::make()
+    ->before(fn () => Log::info('single before'))
+    ->after(fn () => Log::info('single after'))
+    ->run($data);
+
+// Следующий вызов — уже без этих хуков
+CreateUserAction::make()->run($data);
+```
+
+Доступные локальные методы: 
+`before` (beforeRun), 
+`runningLocal` (running), 
+`then` (ran), 
+`onFail` (failed), 
+`after` (afterRun). 
+**Возврат `false` из локальных `before`/`runningLocal` останавливает только текущий экземпляр события.
+
+### Условные локальные события
+
+Хелперы `*When` / `*Unless` запускают локальный колбэк по условию (Boolean или `Closure`, аргументы — такие же, что и у `run`):
+
+```php
+GetUserAction::make()
+    ->beforeWhen(fn ($id) => $id > 0, fn () => Log::debug('positive id'))
+    ->afterUnless(false, fn () => Log::debug('always after'))
+    ->run(10);
+```
+
+`Unless` инвертирует условие, `When`. 
+Локальные хуки не влияют на другие экземпляры и не добавляют глобальных слушателей или событий.
+
 ## Транзакции
 
 ### Автоматические транзакции

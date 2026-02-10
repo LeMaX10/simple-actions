@@ -51,6 +51,56 @@ it('вызываем события в правильном порядке', fun
     expect(CountingAction::$runs)->toBe(1);
 });
 
+it('исполняем локальные события только для конкретного экземпляра', function () {
+    $local = [];
+
+    $first = CountingAction::make()->after(function () use (&$local) {
+        $local[] = 'after';
+    });
+
+    $first->run('one');
+    CountingAction::make()->run('two');
+
+    expect($local)->toBe(['after']);
+    expect(CountingAction::$runs)->toBe(2);
+});
+
+it('Проверяем работу локального before останавливаеем выполнение', function () {
+    $action = CountingAction::make()->before(fn () => false);
+
+    $result = $action->run('stop');
+
+    expect($result)->toBeFalse();
+    expect(CountingAction::$runs)->toBe(0);
+
+    $fallback = CountingAction::make()->run('go');
+    expect($fallback)->toBe('processed: go');
+    expect(CountingAction::$runs)->toBe(1);
+});
+
+it('условные локальные события работают корректно в рамках экзеемпляра', function () {
+    $events = [];
+
+    $unless = CountingAction::make()->beforeUnless(false, function () use (&$events) {
+        $events[] = 'before-unless';
+    });
+
+    $when = CountingAction::make()->afterWhen(true, function () use (&$events) {
+        $events[] = 'after-when';
+    });
+
+    $skip = CountingAction::make()->afterWhen(false, function () use (&$events) {
+        $events[] = 'should-not-fire';
+    });
+
+    $unless->run('u');
+    $when->run('y');
+    $skip->run('n');
+
+    expect($events)->toBe(['before-unless', 'after-when']);
+    expect(CountingAction::$runs)->toBe(3);
+});
+
 it('останавливаем выполнение если beforeRun вернул false', function () {
     CountingAction::beforeRun(fn () => false);
 
