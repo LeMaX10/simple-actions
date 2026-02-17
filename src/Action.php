@@ -4,24 +4,31 @@ declare(strict_types=1);
 namespace LeMaX10\SimpleActions;
 
 use Illuminate\Support\Facades\DB;
-use LeMaX10\SimpleActions\Contracts\Action as ActionContract;
+use LeMaX10\SimpleActions\Contracts\Actionable;
 use LeMaX10\SimpleActions\Contracts\Rememberable;
+use LeMaX10\SimpleActions\Contracts\Memorizeable;
 use LeMaX10\SimpleActions\Exceptions\ActionHandlerMethodNotFoundException;
-use LeMaX10\SimpleActions\Traits\AsRemembered;
-use LeMaX10\SimpleActions\Traits\Bootable;
-use LeMaX10\SimpleActions\Traits\HasEvents;
-use LeMaX10\SimpleActions\Traits\Memorizeable;
+use LeMaX10\SimpleActions\Traits\BootAction;
+use LeMaX10\SimpleActions\Traits\EventAction;
+use LeMaX10\SimpleActions\Traits\Memorize;
+use LeMaX10\SimpleActions\Traits\Remember;
+use LeMaX10\SimpleActions\Traits\StaticHelpers;
 
 /**
  * Класс Action - Абстрактный объект реализующий логику вспомогательных методов и интерферса (Действие).
  *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
-abstract class Action implements ActionContract, Rememberable
+abstract class Action implements Actionable, Rememberable, Memorizeable
 {
-    use AsRemembered, Bootable, HasEvents, Memorizeable;
+    use Remember, BootAction, EventAction, Memorize, StaticHelpers;
 
     protected const HANDLER_METHOD = 'handle';
+
+    /**
+     * @var array<string, bool>
+     */
+    private static array $handlerMethodExists = [];
 
     /**
      * @var bool
@@ -43,22 +50,6 @@ abstract class Action implements ActionContract, Rememberable
      */
     protected mixed $runResolved = null;
 
-    /**
-     * @inerhitDoc
-     */
-    public static function getName(): string
-    {
-        return class_basename(static::class);
-    }
-
-    /**
-     * @return static
-     */
-    public static function make(): static
-    {
-        return app(static::class);
-    }
-
     public function __construct()
     {
         static::booting();
@@ -71,7 +62,11 @@ abstract class Action implements ActionContract, Rememberable
      */
     public function run(...$args): mixed
     {
-        if (!method_exists($this, self::HANDLER_METHOD)) {
+        if (!isset(self::$handlerMethodExists[static::class])) {
+            self::$handlerMethodExists[static::class] = method_exists($this, self::HANDLER_METHOD);
+        }
+        
+        if (!self::$handlerMethodExists[static::class]) {
             throw new ActionHandlerMethodNotFoundException(static::class);
         }
 
@@ -150,6 +145,8 @@ abstract class Action implements ActionContract, Rememberable
     protected function resolve(...$args): mixed
     {
         return $this->memoize(function () use ($args) {
+            $resolver = $this->getResolver(...$args);
+    
             if ($this->withoutTransaction === true) {
                 return $this->return($this->getResolver(...$args), args: $args);
             }
@@ -169,6 +166,6 @@ abstract class Action implements ActionContract, Rememberable
      */
     protected function getResolver(...$args): \Closure
     {
-        return fn () => call_user_func([$this, static::HANDLER_METHOD], ...$args);
+        return fn () => $this->{static::HANDLER_METHOD}(...$args);
     }
 }

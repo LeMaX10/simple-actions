@@ -16,13 +16,13 @@ use LeMaX10\SimpleActions\Events\ActionRunning;
 use LeMaX10\SimpleActions\Observers\ActionObserver;
 
 /**
- * Трейт HasEvents - События жизненного цикла для Actions
+ * Трейт EventAction - События жизненного цикла для Actions
  *
- * Реализует логику жизненого цикла и контроль обработчиков событий жизненного цикла
+ * Реализует логику жизненного цикла и контроль обработчиков событий жизненного цикла
  *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
-trait HasEvents
+trait EventAction
 {
     /**
      * @var array
