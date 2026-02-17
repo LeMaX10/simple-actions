@@ -51,10 +51,10 @@ it('используем условное кеширование через cach
         ->remember('conditional-key', 60)
         ->cacheWhen(fn ($value) => $value > 5);
 
-    $first = $action->run(10);
-    $second = $action->run(10);
-    $third = $action->run(3);
-    $fourth = $action->run(3);
+    $first = $action->run('10');
+    $second = $action->run('10');
+    $third = $action->run('3');
+    $fourth = $action->run('3');
 
     expect([$first, $second, $third, $fourth])->toBe([
         'processed: 10',

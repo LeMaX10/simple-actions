@@ -6,6 +6,7 @@ namespace LeMaX10\SimpleActions\Traits;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Events\NullDispatcher;
 use Illuminate\Events\QueuedClosure;
+use LeMaX10\SimpleActions\Contracts\Action;
 use LeMaX10\SimpleActions\Events\ActionAfterRun;
 use LeMaX10\SimpleActions\Events\ActionBeforeRun;
 use LeMaX10\SimpleActions\Events\ActionEvent;
@@ -23,14 +24,34 @@ use LeMaX10\SimpleActions\Observers\ActionObserver;
  */
 trait EventAction
 {
+    /**
+     * @var array
+     */
     protected array $dispatchesEvents = [];
 
+    /**
+     * @var Dispatcher|null
+     */
     protected static ?Dispatcher $dispatcher = null;
 
+    /**
+     * @var array
+     */
     protected static array $observers = [];
 
+    /**
+     *
+     */
     protected const EVENT_PREFIX = 'simple-action';
 
+    /**
+     * @var array
+     */
+    protected array $localEvents = [];
+
+    /**
+     * @var array|string[]
+     */
     protected static array $eventMap = [
         'beforeRun' => ActionBeforeRun::class,
         'running' => ActionRunning::class,
@@ -87,10 +108,18 @@ trait EventAction
         $eventObject = $this->createEventObject($event, $args);
 
         $result = $this->filterActionEventResults(
+            $this->fireLocalActionEvent($event, $eventObject)
+        );
+
+        if ($result === false || (is_array($result) && in_array(false, $result, true))) {
+            return false;
+        }
+
+        $customResult = $this->filterActionEventResults(
             $this->fireCustomActionEvent($event, $method, $eventObject)
         );
 
-        if ($result === false) {
+        if ($customResult === false || (is_array($customResult) && in_array(false, $customResult, true))) {
             return false;
         }
 
@@ -102,6 +131,8 @@ trait EventAction
         if ($globalResult === false) {
             return false;
         }
+
+        $result = ! empty($customResult) ? $customResult : $result;
 
         return ! empty($result) ? $result : $globalResult;
     }
@@ -123,7 +154,9 @@ trait EventAction
         }
 
         //fallbacck
-        return new class($this, $args) extends ActionEvent {};
+        return new class($this, $args) extends ActionEvent {
+
+        };
     }
 
     /**
@@ -153,11 +186,44 @@ trait EventAction
     {
         if (is_array($result)) {
             $result = array_filter($result, function ($response) {
-                return ! is_null($response);
+                return $response !== null;
             });
         }
 
         return $result;
+    }
+
+    /**
+     * @param  string   $event
+     * @param  callable $callback
+     * @return static
+     */
+    protected function registerLocalActionEvent(string $event, callable $callback): static
+    {
+        $clone = clone $this;
+        $clone->localEvents[$event][] = $callback;
+
+        return $clone;
+    }
+
+    /**
+     * @param  string  $event
+     * @param  object  $eventObject
+     * @return mixed
+     */
+    protected function fireLocalActionEvent(string $event, object $eventObject): mixed
+    {
+        if (! isset($this->localEvents[$event])) {
+            return null;
+        }
+
+        $results = [];
+
+        foreach ($this->localEvents[$event] as $callback) {
+            $results[] = $callback($eventObject);
+        }
+
+        return $this->filterActionEventResults($results);
     }
 
     /**
@@ -203,6 +269,174 @@ trait EventAction
     public static function afterRun(QueuedClosure|callable|array|string $callback): void
     {
         static::registerActionEvent('afterRun', $callback);
+    }
+
+
+    /**
+     * @param callable $callback
+     * @return $this
+     */
+    public function before(callable $callback): static
+    {
+        return $this->registerLocalActionEvent('beforeRun', $callback);
+    }
+
+    /**
+     * @param callable $callback
+     * @return $this
+     */
+    public function runningLocal(callable $callback): static
+    {
+        return $this->registerLocalActionEvent('running', $callback);
+    }
+
+    /**
+     * @param callable $callback
+     * @return $this
+     */
+    public function then(callable $callback): static
+    {
+        return $this->registerLocalActionEvent('ran', $callback);
+    }
+
+    /**
+     * @param callable $callback
+     * @return $this
+     */
+    public function onFail(callable $callback): static
+    {
+        return $this->registerLocalActionEvent('failed', $callback);
+    }
+
+    /**
+     * @param callable $callback
+     * @return $this
+     */
+    public function after(callable $callback): static
+    {
+        return $this->registerLocalActionEvent('afterRun', $callback);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function beforeWhen(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('beforeRun', $condition, $callback, false);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function beforeUnless(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('beforeRun', $condition, $callback, true);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function runningWhen(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('running', $condition, $callback, false);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function runningUnless(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('running', $condition, $callback, true);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function thenWhen(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('ran', $condition, $callback, false);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function thenUnless(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('ran', $condition, $callback, true);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function onFailWhen(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('failed', $condition, $callback, false);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function onFailUnless(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('failed', $condition, $callback, true);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function afterWhen(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('afterRun', $condition, $callback, false);
+    }
+
+    /**
+     * @param \Closure|bool $condition
+     * @param callable $callback
+     * @return $this
+     */
+    public function afterUnless(\Closure|bool $condition, callable $callback): static
+    {
+        return $this->registerLocalActionEventWhen('afterRun', $condition, $callback, true);
+    }
+
+    protected function registerLocalActionEventWhen(string $event, \Closure|bool $condition, callable $callback, bool $negate): static
+    {
+        $clone = clone $this;
+
+        $clone->localEvents[$event][] = function ($eventObject) use ($condition, $callback, $negate) {
+            $args = property_exists($eventObject, 'arguments') ? $eventObject->arguments : [];
+
+            $passed = is_callable($condition) ? (bool) $condition(...$args) : (bool) $condition;
+            if ($negate) {
+                $passed = !$passed;
+            }
+
+            if (! $passed) {
+                return null;
+            }
+
+            return $callback($eventObject);
+        };
+
+        return $clone;
     }
 
     /**
