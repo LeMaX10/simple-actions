@@ -17,6 +17,9 @@ use LeMaX10\SimpleActions\Traits\StaticHelpers;
 /**
  * Класс Action - Абстрактный объект реализующий логику вспомогательных методов и интерферса (Действие).
  *
+ * @template TResult
+ * @implements Actionable<TResult>
+ *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
 abstract class Action implements Actionable, Rememberable, Memorizeable
@@ -57,7 +60,7 @@ abstract class Action implements Actionable, Rememberable, Memorizeable
 
     /**
      * @param ...$args
-     * @return mixed
+     * @return TResult|false
      * @throws ActionHandlerMethodNotFoundException
      */
     public function run(...$args): mixed
@@ -103,11 +106,17 @@ abstract class Action implements Actionable, Rememberable, Memorizeable
         return $this->runResolved;
     }
 
+    /**
+     * @return TResult|false|null
+     */
     public function runIf(bool $condition, ...$args): mixed
     {
         return $condition ? $this->run(...$args) : null;
     }
 
+    /**
+     * @return TResult|false|null
+     */
     public function runUnless(bool $condition, ...$args): mixed
     {
         return $this->runIf(!$condition, ...$args);
@@ -139,7 +148,7 @@ abstract class Action implements Actionable, Rememberable, Memorizeable
 
     /**
      * @param ...$args
-     * @return mixed
+     * @return TResult
      * @throws \Exception
      */
     protected function resolve(...$args): mixed

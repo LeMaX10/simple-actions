@@ -10,6 +10,9 @@ namespace LeMaX10\SimpleActions;
  * множества других Actions в единый сценарий выполнения.
  * Поддерживает все возможности Action: события, транзакции, кеширование.
  *
+ * @template TResult
+ * @extends Action<TResult>
+ *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
 abstract class UseCase extends Action
@@ -22,4 +25,3 @@ abstract class UseCase extends Action
      */
     protected bool $singleTransaction = true;
 }
-

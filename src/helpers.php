@@ -5,9 +5,10 @@ if (!function_exists('action')) {
     /**
      * Хелпер для быстрого создания и выполнения Action
      *
-     * @param  string  $actionClass
+     * @template TResult
+     * @param  class-string<\LeMaX10\SimpleActions\Action<TResult>>  $actionClass
      * @param  mixed  ...$args
-     * @return mixed
+     * @return TResult|false
      */
     function action(string $actionClass, ...$args): mixed
     {
@@ -19,9 +20,10 @@ if (!function_exists('usecase')) {
     /**
      * Хелпер для быстрого создания и выполнения UseCase
      *
-     * @param  string  $useCaseClass
+     * @template TResult
+     * @param  class-string<\LeMaX10\SimpleActions\UseCase<TResult>>  $useCaseClass
      * @param  mixed  ...$args
-     * @return mixed
+     * @return TResult|false
      */
     function usecase(string $useCaseClass, ...$args): mixed
     {
@@ -36,10 +38,11 @@ if (!function_exists('action_with')) {
      * Позволяет сконфигурировать Action перед выполнением через callback.
      * Полезно для добавления мемоизации, кеширования и других опций.
      *
-     * @param  string  $actionClass
-     * @param  \Closure  $configure
+     * @template TResult
+     * @param  class-string<\LeMaX10\SimpleActions\Action<TResult>>  $actionClass
+     * @param  \Closure(\LeMaX10\SimpleActions\Action<TResult>):\LeMaX10\SimpleActions\Action<TResult>  $configure
      * @param  mixed  ...$args
-     * @return mixed
+     * @return TResult|false
      */
     function action_with(string $actionClass, \Closure $configure, ...$args): mixed
     {
@@ -66,4 +69,3 @@ if (!function_exists('generate_args_hash')) {
         return md5($serialized);
     }
 }
-
