@@ -9,6 +9,8 @@ namespace LeMaX10\SimpleActions\Contracts;
  * Это объекты реализующие логику конкретного действия, используются для выделения логики работы с данными
  * Один действие = Один объект действия
  *
+ * @template TResult
+ *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
 interface Actionable
@@ -25,7 +27,7 @@ interface Actionable
 
     /**
      * @param ...$args
-     * @return mixed
+     * @return TResult
      */
     public function run(...$args): mixed;
 }

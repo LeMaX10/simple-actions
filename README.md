@@ -87,6 +87,49 @@ $user = RegisterUserUseCase::make()->run($data);
 $user = usecase(RegisterUserUseCase::class, $data);
 ```
 
+### Типизация результата
+
+Чтобы приложение сохраняло строгую типизацию при работе с `run()` и хелперами `action()`/`usecase()`, укажите возвращаемый тип через PHPDoc-дженерик:
+
+```php
+use App\Models\User;
+use LeMaX10\SimpleActions\Action;
+
+/**
+ * @extends Action<User>
+ */
+class FindUserAction extends Action
+{
+    protected function handle(int $id): User
+    {
+        return User::query()->findOrFail($id);
+    }
+}
+
+$user = FindUserAction::make()->run(1);            // User|false
+$user = action(FindUserAction::class, 1);          // User|false
+$maybe = FindUserAction::make()->runIf(false, 1);  // User|false|null
+
+use App\Models\User;
+use LeMaX10\SimpleActions\UseCase;
+
+/**
+ * @extends UseCase<User>
+ */
+class RegisterUserUseCase extends UseCase
+{
+    protected function handle(array $data): User
+    {
+        return CreateUserAction::make()->run($data['name'], $data['email']);
+    }
+}
+
+$user = RegisterUserUseCase::make()->run($data);   // User|false
+$user = usecase(RegisterUserUseCase::class, $data); // User|false
+```
+
+`false` возможен, если выполнение было остановлено в `beforeRun`/`running` событии.
+
 ## События
 
 ### Цикл жизни событий
