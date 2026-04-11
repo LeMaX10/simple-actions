@@ -12,6 +12,28 @@
 composer require lemax10/simple-actions
 ```
 
+## Artisan команды генерации
+
+Пакет добавляет команды для быстрого создания заготовок:
+
+```bash
+php artisan make:action User/CreateUser
+php artisan make:usecase User/RegisterUser
+```
+
+Что будет создано:
+- `app/Actions/User/CreateUserAction.php`
+- `app/UseCases/User/RegisterUserUseCase.php`
+
+Можно указать полное имя с суффиксом, если нужно:
+
+```bash
+php artisan make:action Actions/User/CreateUserAction
+php artisan make:usecase UseCases/User/RegisterUserUseCase
+```
+
+Флаг `--force` перезапишет существующий файл.
+
 ## Основные возможности
 - Простой и понятный API для создания Actions
 - **UseCase** паттерн - агрегирование Actions в сценарии
@@ -21,6 +43,8 @@ composer require lemax10/simple-actions
 - Управление транзакциями БД
 - Продвинутое кеширование результатов (поддержка штатного Laravel Cache драйвера или любого поддерживаемого им)
 - **Мемоизация** - кеширование в памяти на время запроса
+- **Pipeline** - Цепочка действий для конкретного Action
+- **Idempotency** - Отдельная возможность зафиксировать выполнение экшена иденпотентно (PS> концепция под вопросом, тестируется)
 - Условное выполнение
 - Хелперы для удобного использования
 
@@ -59,6 +83,62 @@ $user = CreateUserAction::make()
 $user = CreateUserAction::make()
     ->runUnless($condition, 'John', 'john@example.com');
 ```
+
+### Pipeline (опционально)
+
+Pipeline подключается только там с помощью трейта, где нужен:
+
+```php
+use App\Actions\Pipes\NormalizeUserDataPipe;
+use App\Actions\Pipes\ValidatePayloadPipe;
+
+$result = CreateUserAction::make()
+    ->through([
+        ValidatePayloadPipe::class,
+        NormalizeUserDataPipe::class,
+    ])
+    ->run($payload);
+```
+
+Каждый "pipe" может изменять аргументы перед следующим шагом и перед `handle`, таким образом мсобирая данные через цепоочку.
+
+Пример pipe-класса:
+
+```php
+use LeMaX10\SimpleActions\Contracts\ActionPipe;
+use LeMaX10\SimpleActions\Support\Pipeline\ActionPipelineContext;
+
+class NormalizeUserDataPipe implements ActionPipe
+{
+    public function handle(ActionPipelineContext $context, \Closure $next): mixed
+    {
+        $payload = $context->argument(0, []);
+        $payload['email'] = strtolower((string) ($payload['email'] ?? ''));
+
+        $context->setArgument(0, $payload);
+
+        return $next($context);
+    }
+}
+```
+
+### Idempotency (опционально)
+
+Для защиты от повторного выполнения одного и того же действия параллельно:
+
+```php
+$order = CreateOrderAction::make()
+    ->idempotent("order:create:{$requestId}", 300)
+    ->run($payload);
+
+// Или вычисление ключа от аргументов (под вопросом)
+$order = CreateOrderAction::make()
+    ->idempotent(fn (array $payload) => 'order:' . $payload['external_id'])
+    ->run($payload);
+```
+
+Если ключ уже использовался, вернется сохраненный результат без повторного выполнения `handle`.
+Если такой же ключ сейчас "в процессе", будет выброшено исключение `ActionIdempotencyInProgressException`.
 
 ### UseCase - Сценарии из Actions
 

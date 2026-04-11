@@ -1,0 +1,18 @@
+<?php
+declare(strict_types=1);
+
+namespace DummyNamespace;
+
+use LeMaX10\SimpleActions\DummyBaseClass;
+
+/**
+ * @extends DummyBaseClass<mixed>
+ */
+class DummyClass extends DummyBaseClass
+{
+    protected function handle(): mixed
+    {
+        // TODO: Реализовать действие.
+        return null;
+    }
+}
