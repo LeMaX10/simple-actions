@@ -5,11 +5,13 @@ namespace LeMaX10\SimpleActions;
 
 use Illuminate\Support\Facades\DB;
 use LeMaX10\SimpleActions\Contracts\Actionable;
+use LeMaX10\SimpleActions\Contracts\Idempotentable;
 use LeMaX10\SimpleActions\Contracts\Rememberable;
 use LeMaX10\SimpleActions\Contracts\Memorizeable;
 use LeMaX10\SimpleActions\Exceptions\ActionHandlerMethodNotFoundException;
 use LeMaX10\SimpleActions\Traits\BootAction;
 use LeMaX10\SimpleActions\Traits\EventAction;
+use LeMaX10\SimpleActions\Traits\Idempotency;
 use LeMaX10\SimpleActions\Traits\Memorize;
 use LeMaX10\SimpleActions\Traits\Remember;
 use LeMaX10\SimpleActions\Traits\StaticHelpers;
@@ -22,9 +24,9 @@ use LeMaX10\SimpleActions\Traits\StaticHelpers;
  *
  * @author Vladimir Pyankov, v@pyankov.pro, RDLTeam
  */
-abstract class Action implements Actionable, Rememberable, Memorizeable
+abstract class Action implements Actionable, Rememberable, Memorizeable, Idempotentable
 {
-    use Remember, BootAction, EventAction, Memorize, StaticHelpers;
+    use Remember, BootAction, EventAction, Idempotency, Memorize, StaticHelpers;
 
     protected const HANDLER_METHOD = 'handle';
 
@@ -154,18 +156,17 @@ abstract class Action implements Actionable, Rememberable, Memorizeable
     protected function resolve(...$args): mixed
     {
         return $this->memoize(function () use ($args) {
-            $resolver = $this->getResolver(...$args);
-    
-            if ($this->withoutTransaction === true) {
+            return $this->executeIdempotent(function () use ($args) {
+                if ($this->withoutTransaction === true) {
+                    return $this->return($this->getResolver(...$args), args: $args);
+                }
+
+                if ($this->singleTransaction === true) {
+                    return DB::transaction(fn () => $this->return($this->getResolver(...$args), args: $args));
+                }
+
                 return $this->return($this->getResolver(...$args), args: $args);
-            }
-
-            // Если включена транзакция
-            if ($this->singleTransaction === true) {
-                return DB::transaction(fn () => $this->return($this->getResolver(...$args), args: $args));
-            }
-
-            return $this->return($this->getResolver(...$args), args: $args);
+            }, $args);
         }, $args);
     }
 

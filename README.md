@@ -1,5 +1,7 @@
 # Simple Actions
 
+Language: [Русский](README.md) | [English](README.en.md)
+
 Пакет для реализации паттерна простых переиспользуемых действий (Actions) в Laravel приложениях.
 Вдохновлен Laravel Actions, но не перегружен контекстами. Основной упор сосредоточен на принципе 1 объект экшена = 1 действие. 
 Для упрощения реализации логики с участием множества действий, предусмотрены сценарии (UseCases). Сценарии -- это агрегация множества действий в единый сценарий.
@@ -25,7 +27,7 @@ php artisan make:usecase User/RegisterUser
 - `app/Actions/User/CreateUserAction.php`
 - `app/UseCases/User/RegisterUserUseCase.php`
 
-Можно указать полное имя с суффиксом, если нужно:
+Можно указать полное имя с суффиксом, если необходимо:
 
 ```bash
 php artisan make:action Actions/User/CreateUserAction
@@ -43,8 +45,7 @@ php artisan make:usecase UseCases/User/RegisterUserUseCase
 - Управление транзакциями БД
 - Продвинутое кеширование результатов (поддержка штатного Laravel Cache драйвера или любого поддерживаемого им)
 - **Мемоизация** - кеширование в памяти на время запроса
-- **Pipeline** - Цепочка действий для конкретного Action
-- **Idempotency** - Отдельная возможность зафиксировать выполнение экшена иденпотентно (PS> концепция под вопросом, тестируется)
+- **Idempotency** - защита от повторного параллельного выполнения и от возможного эффекта "гонка". 
 - Условное выполнение
 - Хелперы для удобного использования
 
@@ -84,61 +85,40 @@ $user = CreateUserAction::make()
     ->runUnless($condition, 'John', 'john@example.com');
 ```
 
-### Pipeline (опционально)
-
-Pipeline подключается только там с помощью трейта, где нужен:
-
-```php
-use App\Actions\Pipes\NormalizeUserDataPipe;
-use App\Actions\Pipes\ValidatePayloadPipe;
-
-$result = CreateUserAction::make()
-    ->through([
-        ValidatePayloadPipe::class,
-        NormalizeUserDataPipe::class,
-    ])
-    ->run($payload);
-```
-
-Каждый "pipe" может изменять аргументы перед следующим шагом и перед `handle`, таким образом мсобирая данные через цепоочку.
-
-Пример pipe-класса:
-
-```php
-use LeMaX10\SimpleActions\Contracts\ActionPipe;
-use LeMaX10\SimpleActions\Support\Pipeline\ActionPipelineContext;
-
-class NormalizeUserDataPipe implements ActionPipe
-{
-    public function handle(ActionPipelineContext $context, \Closure $next): mixed
-    {
-        $payload = $context->argument(0, []);
-        $payload['email'] = strtolower((string) ($payload['email'] ?? ''));
-
-        $context->setArgument(0, $payload);
-
-        return $next($context);
-    }
-}
-```
-
 ### Idempotency (опционально)
 
-Для защиты от повторного выполнения одного и того же действия параллельно:
+Для защиты от повторного параллельного выполнения одного и того же действия:
 
 ```php
 $order = CreateOrderAction::make()
     ->idempotent("order:create:{$requestId}", 300)
     ->run($payload);
 
-// Или вычисление ключа от аргументов (под вопросом)
+// Вычисление ключа от аргументов
 $order = CreateOrderAction::make()
     ->idempotent(fn (array $payload) => 'order:' . $payload['external_id'])
+    ->run($payload);
+
+// Автогенерация ключа аналогично rememberAuto/memo
+$order = CreateOrderAction::make()
+    ->idempotentAuto('order:create', 300)
     ->run($payload);
 ```
 
 Если ключ уже использовался, вернется сохраненный результат без повторного выполнения `handle`.
 Если такой же ключ сейчас "в процессе", будет выброшено исключение `ActionIdempotencyInProgressException`.
+
+По умолчанию используется cache-based репозиторий. Репозиторий можно переключить:
+
+```php
+$result = SomeAction::make()
+    ->idempotentRepository('cache')
+    ->idempotentStore('redis')
+    ->idempotent('my:key', 300)
+    ->run($payload);
+```
+
+Можно регистрировать собственные idempotency-драйверы через `IdempotencyRepositoryManager::extend(...)`. К примеру если Вам небходимо хранить блокировки в БД или абстрактном хранилище.
 
 ### UseCase - Сценарии из Actions
 

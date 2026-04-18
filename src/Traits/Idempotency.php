@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 namespace LeMaX10\SimpleActions\Traits;
 
-use Illuminate\Contracts\Cache\Repository;
-use Illuminate\Support\Facades\Cache;
+use LeMaX10\SimpleActions\Contracts\IdempotencyRepository;
 use LeMaX10\SimpleActions\Exceptions\ActionIdempotencyInProgressException;
+use LeMaX10\SimpleActions\Support\Idempotency\IdempotencyRepositoryManager;
 
 trait Idempotency
 {
@@ -16,10 +16,16 @@ trait Idempotency
      */
     private string|\Closure|null $idempotencyKey = null;
 
+    private bool $idempotencyAutoKey = false;
+
+    private ?string $idempotencyKeyPrefix = null;
+
     /**
      * @var \Closure|\DateTimeInterface|\DateInterval|int|null
      */
     private \Closure|\DateTimeInterface|\DateInterval|int|null $idempotencyTtl = null;
+
+    private string $idempotencyRepository = 'cache';
 
     private ?string $idempotencyStore = null;
 
@@ -34,8 +40,37 @@ trait Idempotency
     {
         $clone = clone $this;
         $clone->idempotencyEnabled = true;
+        $clone->idempotencyAutoKey = false;
         $clone->idempotencyKey = $key;
         $clone->idempotencyTtl = $ttl;
+
+        return $clone;
+    }
+
+    /**
+     * @param  string|null  $prefix
+     * @param  \Closure|\DateTimeInterface|\DateInterval|int|null  $ttl
+     * @return static
+     */
+    public function idempotentAuto(?string $prefix = null, \Closure|\DateTimeInterface|\DateInterval|int|null $ttl = null): static
+    {
+        $clone = clone $this;
+        $clone->idempotencyEnabled = true;
+        $clone->idempotencyAutoKey = true;
+        $clone->idempotencyKeyPrefix = $prefix ?? static::class;
+        $clone->idempotencyKey = null;
+        $clone->idempotencyTtl = $ttl;
+
+        return $clone;
+    }
+
+    /**
+     * @return static
+     */
+    public function idempotentRepository(string $repository): static
+    {
+        $clone = clone $this;
+        $clone->idempotencyRepository = $repository;
 
         return $clone;
     }
@@ -76,18 +111,16 @@ trait Idempotency
         }
 
         $baseKey = $this->resolveIdempotencyKey($args);
-        $resultKey = $this->idempotencyResultKey($baseKey);
-        $processingKey = $this->idempotencyProcessingKey($baseKey);
-        $cache = $this->getIdempotencyCacheManager();
-        $cached = $cache->get($resultKey);
+        $repository = $this->getIdempotencyRepository();
+        $cached = $repository->getResult($baseKey);
 
-        if (is_array($cached) && array_key_exists('value', $cached)) {
+        if ($cached !== null && array_key_exists('value', $cached)) {
             return $cached['value'];
         }
 
-        if (!$cache->add($processingKey, 1, $this->idempotencyProcessingTtl)) {
-            $cached = $cache->get($resultKey);
-            if (is_array($cached) && array_key_exists('value', $cached)) {
+        if (!$repository->acquireProcessing($baseKey, $this->idempotencyProcessingTtl)) {
+            $cached = $repository->getResult($baseKey);
+            if ($cached !== null && array_key_exists('value', $cached)) {
                 return $cached['value'];
             }
 
@@ -96,21 +129,11 @@ trait Idempotency
 
         try {
             $result = $closure();
-            $payload = [
-                'value' => $result,
-                'completed_at' => time(),
-                'action' => static::class,
-            ];
-
-            if ($this->idempotencyTtl === null) {
-                $cache->forever($resultKey, $payload);
-            } else {
-                $cache->put($resultKey, $payload, $this->idempotencyTtl);
-            }
+            $repository->storeResult($baseKey, $result, $this->idempotencyTtl);
 
             return $result;
         } finally {
-            $cache->forget($processingKey);
+            $repository->releaseProcessing($baseKey);
         }
     }
 
@@ -120,6 +143,10 @@ trait Idempotency
      */
     protected function resolveIdempotencyKey(array $args): string
     {
+        if ($this->idempotencyAutoKey) {
+            return $this->generateIdempotencyKey($args);
+        }
+
         if ($this->idempotencyKey === null) {
             throw new \InvalidArgumentException('Idempotency key is required.');
         }
@@ -131,26 +158,22 @@ trait Idempotency
         return $this->idempotencyKey;
     }
 
-    protected function idempotencyResultKey(string $baseKey): string
+    protected function generateIdempotencyKey(array $args): string
     {
-        return "simple-actions:idem:result:{$baseKey}";
+        $prefix = $this->idempotencyKeyPrefix ?? static::class;
+        $hash = generate_args_hash($args);
+
+        return "{$prefix}:{$hash}";
     }
 
-    protected function idempotencyProcessingKey(string $baseKey): string
+    protected function getIdempotencyRepository(): IdempotencyRepository
     {
-        return "simple-actions:idem:processing:{$baseKey}";
-    }
+        $container = app();
 
-    /**
-     * @return Repository
-     */
-    protected function getIdempotencyCacheManager(): Repository
-    {
-        /** @var \Illuminate\Cache\Repository $cache */
-        $cache = $this->idempotencyStore !== null
-            ? Cache::store($this->idempotencyStore)
-            : Cache::driver();
+        $manager = $container->bound(IdempotencyRepositoryManager::class)
+            ? $container->make(IdempotencyRepositoryManager::class)
+            : new IdempotencyRepositoryManager($container);
 
-        return $cache;
+        return $manager->driver($this->idempotencyRepository, $this->idempotencyStore);
     }
 }
